@@ -265,6 +265,12 @@ fn collect_element_links(element: &html::PageElement, links: &mut Vec<usize>) {
             }
         }
 
+        html::PageElement::Container(container) => {
+            for child in &container.elements {
+                collect_element_links(child, links);
+            }
+        }
+
         _ => {}
     }
 }
@@ -296,6 +302,16 @@ fn find_element_link_url(element: &html::PageElement, target_index: usize) -> Op
         html::PageElement::List { items, .. } => {
             for item in items {
                 if let Some(url) = find_inline_link_url(&item.elements, target_index) {
+                    return Some(url);
+                }
+            }
+
+            None
+        }
+
+        html::PageElement::Container(container) => {
+            for child in &container.elements {
+                if let Some(url) = find_element_link_url(child, target_index) {
                     return Some(url);
                 }
             }

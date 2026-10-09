@@ -5,6 +5,19 @@ pub struct Page {
     pub elements: Vec<PageElement>,
 }
 
+pub enum ContainerKind {
+    Header,
+    Card,
+    Sidebar,
+    Footer,
+}
+
+pub struct Container {
+    pub kind: ContainerKind,
+    pub title: Option<String>,
+    pub elements: Vec<PageElement>,
+}
+
 pub enum PageElement {
     Heading {
         level: u8,
@@ -25,6 +38,10 @@ pub enum PageElement {
     HorizontalRule,
     Text(String),
     Break,
+    Container(Container),
+    Button {
+        text: String,
+    },
 }
 
 pub struct ListItem {
@@ -39,6 +56,9 @@ pub enum InlineElement {
         url: String,
     },
     Code(String),
+    Button {
+        text: String,
+    },
 }
 
 pub fn parse(html: &str) -> Page {
@@ -174,7 +194,179 @@ fn parse_element(
             elements.push(PageElement::Break);
         }
 
-        "main" | "section" | "article" | "header" | "footer" | "nav" | "div" | "body" => {
+        "button" => {
+            let text = clean_text(&element.text().collect::<String>());
+            if !text.is_empty() {
+                elements.push(PageElement::Button { text });
+            }
+        }
+
+        "header" | "nav" => {
+            let mut container_elements = Vec::new();
+            for child in element.children() {
+                match child.value() {
+                    Node::Text(text) => {
+                        let text = clean_text(text);
+                        if !text.is_empty() {
+                            container_elements.push(PageElement::Text(text));
+                        }
+                    }
+                    Node::Element(_) => {
+                        if let Some(child_element) = ElementRef::wrap(child) {
+                            parse_element(child_element, &mut container_elements, next_link_index);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !container_elements.is_empty() {
+                let title = element.value().attr("aria-label").map(|s| s.to_string());
+                elements.push(PageElement::Container(Container {
+                    kind: ContainerKind::Header,
+                    title,
+                    elements: container_elements,
+                }));
+            }
+        }
+
+        "aside" => {
+            let mut container_elements = Vec::new();
+            for child in element.children() {
+                match child.value() {
+                    Node::Text(text) => {
+                        let text = clean_text(text);
+                        if !text.is_empty() {
+                            container_elements.push(PageElement::Text(text));
+                        }
+                    }
+                    Node::Element(_) => {
+                        if let Some(child_element) = ElementRef::wrap(child) {
+                            parse_element(child_element, &mut container_elements, next_link_index);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !container_elements.is_empty() {
+                let title = element.value().attr("aria-label").map(|s| s.to_string());
+                elements.push(PageElement::Container(Container {
+                    kind: ContainerKind::Sidebar,
+                    title,
+                    elements: container_elements,
+                }));
+            }
+        }
+
+        "footer" => {
+            let mut container_elements = Vec::new();
+            for child in element.children() {
+                match child.value() {
+                    Node::Text(text) => {
+                        let text = clean_text(text);
+                        if !text.is_empty() {
+                            container_elements.push(PageElement::Text(text));
+                        }
+                    }
+                    Node::Element(_) => {
+                        if let Some(child_element) = ElementRef::wrap(child) {
+                            parse_element(child_element, &mut container_elements, next_link_index);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !container_elements.is_empty() {
+                elements.push(PageElement::Container(Container {
+                    kind: ContainerKind::Footer,
+                    title: None,
+                    elements: container_elements,
+                }));
+            }
+        }
+
+        "article" => {
+            let mut container_elements = Vec::new();
+            for child in element.children() {
+                match child.value() {
+                    Node::Text(text) => {
+                        let text = clean_text(text);
+                        if !text.is_empty() {
+                            container_elements.push(PageElement::Text(text));
+                        }
+                    }
+                    Node::Element(_) => {
+                        if let Some(child_element) = ElementRef::wrap(child) {
+                            parse_element(child_element, &mut container_elements, next_link_index);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !container_elements.is_empty() {
+                elements.push(PageElement::Container(Container {
+                    kind: ContainerKind::Card,
+                    title: None,
+                    elements: container_elements,
+                }));
+            }
+        }
+
+        "div" | "section" => {
+            let class = element.value().attr("class").unwrap_or("").to_lowercase();
+            let style = element.value().attr("style").unwrap_or("").to_lowercase();
+            let is_card = class.contains("card")
+                || class.contains("box")
+                || class.contains("panel")
+                || class.contains("post")
+                || class.contains("border")
+                || style.contains("border");
+
+            if is_card {
+                let mut container_elements = Vec::new();
+                for child in element.children() {
+                    match child.value() {
+                        Node::Text(text) => {
+                            let text = clean_text(text);
+                            if !text.is_empty() {
+                                container_elements.push(PageElement::Text(text));
+                            }
+                        }
+                        Node::Element(_) => {
+                            if let Some(child_element) = ElementRef::wrap(child) {
+                                parse_element(child_element, &mut container_elements, next_link_index);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if !container_elements.is_empty() {
+                    elements.push(PageElement::Container(Container {
+                        kind: ContainerKind::Card,
+                        title: None,
+                        elements: container_elements,
+                    }));
+                }
+            } else {
+                for child in element.children() {
+                    match child.value() {
+                        Node::Text(text) => {
+                            let text = clean_text(text);
+                            if !text.is_empty() {
+                                elements.push(PageElement::Text(text));
+                            }
+                        }
+                        Node::Element(_) => {
+                            if let Some(child_element) = ElementRef::wrap(child) {
+                                parse_element(child_element, elements, next_link_index);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        "main" | "body" => {
             for child in element.children() {
                 match child.value() {
                     Node::Text(text) => {
@@ -253,6 +445,14 @@ fn parse_inline(element: ElementRef<'_>, next_link_index: &mut usize) -> Vec<Inl
                         elements.push(InlineElement::Text("\n".to_string()));
                     }
 
+                    "button" => {
+                        let text = clean_text(&child_element.text().collect::<String>());
+
+                        if !text.is_empty() {
+                            elements.push(InlineElement::Button { text });
+                        }
+                    }
+
                     _ => {
                         let text = clean_text(&child_element.text().collect::<String>());
 
@@ -287,19 +487,58 @@ mod tests {
             PageElement::Text(t) => assert_eq!(t, "Hello inside div"),
             _ => panic!("Expected text element"),
         }
+        match &page.elements[1] {
+            PageElement::Container(c) => assert!(matches!(c.kind, ContainerKind::Header)),
+            _ => panic!("Expected Header container"),
+        }
+    }
+
+    #[test]
+    fn test_parse_card_and_button() {
+        let html = "<html><body><div class=\"card\"><h2>Title</h2><p>Body</p><button>Submit</button></div></body></html>";
+        let page = parse(html);
+        assert_eq!(page.elements.len(), 1);
+        match &page.elements[0] {
+            PageElement::Container(c) => {
+                assert!(matches!(c.kind, ContainerKind::Card));
+                assert_eq!(c.elements.len(), 3);
+            }
+            _ => panic!("Expected Card container"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sidebar_and_footer() {
+        let html = "<html><body><aside><p>Sidebar info</p></aside><footer><p>Copyright 2026</p></footer></body></html>";
+        let page = parse(html);
+        assert_eq!(page.elements.len(), 2);
+        match &page.elements[0] {
+            PageElement::Container(c) => assert!(matches!(c.kind, ContainerKind::Sidebar)),
+            _ => panic!("Expected Sidebar container"),
+        }
+        match &page.elements[1] {
+            PageElement::Container(c) => assert!(matches!(c.kind, ContainerKind::Footer)),
+            _ => panic!("Expected Footer container"),
+        }
     }
 
     #[test]
     fn test_parse_links_in_containers() {
-        let html = "<html><body><div><a href=\"/link\">Click</a></div></body></html>";
+        let html = "<html><body><div class=\"card\"><a href=\"/link\">Click</a></div></body></html>";
         let page = parse(html);
         assert_eq!(page.elements.len(), 1);
         match &page.elements[0] {
-            PageElement::Link { url, text, .. } => {
-                assert_eq!(url, "/link");
-                assert_eq!(text, "Click");
+            PageElement::Container(c) => {
+                assert_eq!(c.elements.len(), 1);
+                match &c.elements[0] {
+                    PageElement::Link { url, text, .. } => {
+                        assert_eq!(url, "/link");
+                        assert_eq!(text, "Click");
+                    }
+                    _ => panic!("Expected link element"),
+                }
             }
-            _ => panic!("Expected link element"),
+            _ => panic!("Expected Card container"),
         }
     }
 }
