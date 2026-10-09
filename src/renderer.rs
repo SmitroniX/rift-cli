@@ -79,6 +79,23 @@ fn build_lines(page: &Page, selected_link: Option<usize>) -> Vec<Line<'static>> 
         render_element(element, &mut lines, selected_link);
     }
 
+    if lines.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  ℹ  No readable text content found on this page.",
+                Style::default().add_modifier(Modifier::DIM),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "     This page may require client-side JavaScript to render its interface.",
+                Style::default().add_modifier(Modifier::DIM),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
     lines
 }
 
@@ -402,6 +419,21 @@ mod tests {
         }).collect();
 
         assert!(rendered[0].contains("[ ➔ Click Me ]"));
+    }
+
+    #[test]
+    fn test_render_empty_page() {
+        let page = Page {
+            title: "Empty".to_string(),
+            elements: vec![],
+        };
+
+        let lines = build_lines(&page, None);
+        let rendered: Vec<String> = lines.iter().map(|l| {
+            l.spans.iter().map(|s| s.content.to_string()).collect::<String>()
+        }).collect();
+
+        assert!(rendered.iter().any(|line| line.contains("No readable text content")));
     }
 }
 

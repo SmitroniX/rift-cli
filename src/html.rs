@@ -1,10 +1,12 @@
 use scraper::{ElementRef, Html, Node, Selector};
 
+#[derive(Debug, Clone)]
 pub struct Page {
     pub title: String,
     pub elements: Vec<PageElement>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum ContainerKind {
     Header,
     Card,
@@ -12,12 +14,14 @@ pub enum ContainerKind {
     Footer,
 }
 
+#[derive(Debug, Clone)]
 pub struct Container {
     pub kind: ContainerKind,
     pub title: Option<String>,
     pub elements: Vec<PageElement>,
 }
 
+#[derive(Debug, Clone)]
 pub enum PageElement {
     Heading {
         level: u8,
@@ -44,10 +48,12 @@ pub enum PageElement {
     },
 }
 
+#[derive(Debug, Clone)]
 pub struct ListItem {
     pub elements: Vec<InlineElement>,
 }
 
+#[derive(Debug, Clone)]
 pub enum InlineElement {
     Text(String),
     Link {
@@ -76,11 +82,31 @@ pub fn parse(html: &str) -> Page {
 
     let body_selector = Selector::parse("body").unwrap();
 
-    let elements = document
+    let mut elements = document
         .select(&body_selector)
         .next()
         .map(parse_body)
         .unwrap_or_default();
+
+    if elements.is_empty() {
+        if let Ok(meta_selector) = Selector::parse("meta[name='description'], meta[property='og:description'], meta[name='twitter:description']") {
+            for meta_el in document.select(&meta_selector) {
+                if let Some(content) = meta_el.value().attr("content") {
+                    let desc = clean_text(content);
+                    if !desc.is_empty() {
+                        elements.push(PageElement::Container(Container {
+                            kind: ContainerKind::Card,
+                            title: Some("Page Overview (Client-Side App)".to_string()),
+                            elements: vec![
+                                PageElement::Paragraph(vec![InlineElement::Text(desc)]),
+                            ],
+                        }));
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     Page { title, elements }
 }
@@ -385,7 +411,31 @@ fn parse_element(
             }
         }
 
-        "script" | "style" | "noscript" | "template" => {}
+        "noscript" => {
+            let raw_html = element.text().collect::<String>();
+            if !raw_html.trim().is_empty() {
+                let fragment = Html::parse_fragment(&raw_html);
+                let root_element = fragment.root_element();
+                for child in root_element.children() {
+                    match child.value() {
+                        Node::Element(_) => {
+                            if let Some(child_element) = ElementRef::wrap(child) {
+                                parse_element(child_element, elements, next_link_index);
+                            }
+                        }
+                        Node::Text(text) => {
+                            let text = clean_text(text);
+                            if !text.is_empty() {
+                                elements.push(PageElement::Text(text));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        "script" | "style" | "template" => {}
 
         _ => {
             let text = clean_text(&element.text().collect::<String>());
@@ -541,5 +591,62 @@ mod tests {
             _ => panic!("Expected Card container"),
         }
     }
+
+    #[test]
+    fn test_parse_noscript_content() {
+        let html = r#"
+        <html>
+            <head><title>SmitroniX</title></head>
+            <body>
+                <div id="root"></div>
+                <noscript>
+                    <h1>Asmit Jogdand (SmitroniX) — Full Stack & Cloud Systems Engineer</h1>
+                    <p>Engineer focused on high-performance distributed systems.</p>
+                    <h2>Connect & Profiles</h2>
+                    <ul>
+                        <li><a href="https://github.com/SmitroniX">GitHub</a></li>
+                        <li><a href="https://linkedin.com">LinkedIn</a></li>
+                    </ul>
+                </noscript>
+            </body>
+        </html>
+        "#;
+        let page = parse(html);
+        assert_eq!(page.title, "SmitroniX");
+        assert!(page.elements.len() >= 4);
+    }
+
+    #[test]
+    #[ignore] // Live network integration test: cargo test -- --ignored
+    fn test_smitronix_dev_live() {
+        let body = crate::network::fetch("https://smitronix.dev").expect("Network fetch failed");
+        let page = parse(&body);
+        assert!(page.elements.len() >= 4);
+    }
+
+    #[test]
+    fn test_parse_noscript_text() {
+        let html = "<html><body><noscript>Please enable JavaScript to view this site.</noscript></body></html>";
+        let page = parse(html);
+        assert!(!page.elements.is_empty());
+    }
+
+    #[test]
+    fn test_parse_spa_meta_description() {
+        let html = r#"<html><head><title>SPA App</title><meta name="description" content="A cool single page app."></head><body><div id="root"></div></body></html>"#;
+        let page = parse(html);
+        assert_eq!(page.elements.len(), 1);
+        match &page.elements[0] {
+            PageElement::Container(c) => {
+                assert!(matches!(c.kind, ContainerKind::Card));
+                assert_eq!(c.title.as_deref(), Some("Page Overview (Client-Side App)"));
+            }
+            _ => panic!("Expected Card container for SPA meta description"),
+        }
+    }
 }
+
+
+
+
 
