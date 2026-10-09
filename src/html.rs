@@ -176,8 +176,19 @@ fn parse_element(
 
         "main" | "section" | "article" | "header" | "footer" | "nav" | "div" | "body" => {
             for child in element.children() {
-                if let Some(child_element) = ElementRef::wrap(child) {
-                    parse_element(child_element, elements, next_link_index);
+                match child.value() {
+                    Node::Text(text) => {
+                        let text = clean_text(text);
+                        if !text.is_empty() {
+                            elements.push(PageElement::Text(text));
+                        }
+                    }
+                    Node::Element(_) => {
+                        if let Some(child_element) = ElementRef::wrap(child) {
+                            parse_element(child_element, elements, next_link_index);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -262,3 +273,34 @@ fn parse_inline(element: ElementRef<'_>, next_link_index: &mut usize) -> Vec<Inl
 fn clean_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_container_with_text() {
+        let html = "<html><body><div>Hello inside div</div><header>Header text</header></body></html>";
+        let page = parse(html);
+        assert_eq!(page.elements.len(), 2);
+        match &page.elements[0] {
+            PageElement::Text(t) => assert_eq!(t, "Hello inside div"),
+            _ => panic!("Expected text element"),
+        }
+    }
+
+    #[test]
+    fn test_parse_links_in_containers() {
+        let html = "<html><body><div><a href=\"/link\">Click</a></div></body></html>";
+        let page = parse(html);
+        assert_eq!(page.elements.len(), 1);
+        match &page.elements[0] {
+            PageElement::Link { url, text, .. } => {
+                assert_eq!(url, "/link");
+                assert_eq!(text, "Click");
+            }
+            _ => panic!("Expected link element"),
+        }
+    }
+}
+

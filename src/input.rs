@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 
 pub enum InputEvent {
     Quit,
@@ -24,7 +24,7 @@ pub fn poll() -> Result<Option<InputEvent>, Box<dyn std::error::Error>> {
     }
 
     match event::read()? {
-        Event::Key(key_event) => match key_event.code {
+        Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match key_event.code {
             KeyCode::Char('q') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                 Ok(Some(InputEvent::Quit))
             }

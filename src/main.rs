@@ -42,6 +42,7 @@ fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut address = String::new();
+    let mut current_url = String::new();
 
     let mut page = Page {
         title: "RIFT-CLI".to_string(),
@@ -84,11 +85,13 @@ fn run(
 
                 InputEvent::Enter => {
                     if let Some(link_index) = selected_link {
-                        if let Some(url) = find_link_url(&page, link_index) {
-                            address = url.to_string();
+                        if let Some(link_url) = find_link_url(&page, link_index) {
+                            let target = resolve_url(&current_url, link_url);
+                            address = target.clone();
 
                             match network::fetch(&address) {
                                 Ok(body) => {
+                                    current_url = address.clone();
                                     page = html::parse(&body);
                                     error_message = None;
                                     scroll = 0;
@@ -102,15 +105,12 @@ fn run(
                             }
                         }
                     } else if !address.is_empty() {
-                        let url =
-                            if address.starts_with("http://") || address.starts_with("https://") {
-                                address.clone()
-                            } else {
-                                format!("https://{address}")
-                            };
+                        let url = resolve_url(&current_url, &address);
 
                         match network::fetch(&url) {
                             Ok(body) => {
+                                current_url = url.clone();
+                                address = url;
                                 page = html::parse(&body);
                                 error_message = None;
                                 scroll = 0;
@@ -318,3 +318,51 @@ fn find_inline_link_url(elements: &[html::InlineElement], target_index: usize) -
 
     None
 }
+
+fn resolve_url(base: &str, target: &str) -> String {
+    if let Ok(base_url) = url::Url::parse(base) {
+        if let Ok(joined) = base_url.join(target) {
+            return joined.to_string();
+        }
+    }
+
+    if target.starts_with("http://") || target.starts_with("https://") {
+        target.to_string()
+    } else {
+        format!("https://{target}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_relative_url() {
+        assert_eq!(
+            resolve_url("https://example.com/blog/page.html", "about.html"),
+            "https://example.com/blog/about.html"
+        );
+        assert_eq!(
+            resolve_url("https://example.com/blog/page.html", "/root.html"),
+            "https://example.com/root.html"
+        );
+    }
+
+    #[test]
+    fn test_resolve_absolute_url() {
+        assert_eq!(
+            resolve_url("https://example.com", "https://google.com"),
+            "https://google.com/"
+        );
+    }
+
+    #[test]
+    fn test_resolve_empty_base() {
+        assert_eq!(
+            resolve_url("", "example.com"),
+            "https://example.com"
+        );
+    }
+}
+
