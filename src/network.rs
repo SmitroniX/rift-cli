@@ -112,4 +112,15 @@ mod tests {
     fn test_fetch_invalid_url() {
         assert!(fetch("invalid-url").is_err());
     }
+
+    #[test]
+    #[ignore] // Live network test with Chromium: cargo test -- --ignored
+    fn test_fetch_with_chromium_live() {
+        if is_chromium_available() {
+            let res = fetch_with_chromium("https://smitronix.dev");
+            assert!(res.is_ok());
+            let html = res.unwrap();
+            assert!(html.contains("<html"));
+        }
+    }
 }
